@@ -5,6 +5,12 @@ const usersDB = {
 
 const bcrypt = require('bcrypt');
 
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
+const path = require('path');
+const fsPromises = require('fs').promises;
+
+
 const handleLogin = async (req, res) => {
     const { user, pwd } = req.body;
     if ( !user || !pwd ) return res.status(400).json({'message': 'add username and password!'});
@@ -13,7 +19,26 @@ const handleLogin = async (req, res) => {
 
     const match = await bcrypt.compare(pwd, foundUser.password);
     if (match) {
-        res.json({'message': `Success user ${user} logged in!`});
+        //create JWT 
+        const accessToken = jwt.sign(
+            { "username": foundUser.username },
+            process.env.ACCESS_TOKEN_SECRET,
+            { expiresIn: '30s' }
+        );
+        const refreshToken = jwt.sign(
+            { "username": foundUser.username},
+            process.env.REFRESH_TOKEN_SECRET,
+            { expiresIn: '1d'}
+        );
+        const otherUser = usersDB.users.filter( person => person.username !== foundUser.username);
+        const currentUser = {...foundUser, refreshToken};
+        usersDB.setUsers([...otherUser,currentUser]);
+        await fsPromises.writeFile(
+            path.join(__dirname, '..', 'model', 'users.json'), 
+            JSON.stringify(usersDB.users)
+        );
+        res.cookie('jwt', refreshToken, { httpOnly: true, maxAge: 24 * 60 * 60* 1000 });
+        res.json({ accessToken });
     } else {
         res.sendStatus(401);
     }
